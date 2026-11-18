@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "podcast-search"
+version = "0.1.0"
+description = "Podcast transcript search: index from podcast-transcriber output, search via Meilisearch"
+requires-python = ">=3.11"
+dependencies = [
+    "meilisearch>=0.31",
+    "flask>=3.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
