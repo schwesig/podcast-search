@@ -104,11 +104,6 @@ def index_all(transcripts_dir: str = None, dry_run: bool = False) -> int:
     client = meilisearch.Client(config.MEILI_URL, config.MEILI_KEY)
     idx = client.index(config.MEILI_INDEX)
 
-    # Configure searchable and filterable attributes once
-    idx.update_searchable_attributes(["title", "podcast", "text", "summary"])
-    idx.update_filterable_attributes(["feed_slug", "podcast", "date"])
-    idx.update_sortable_attributes(["date"])
-
     docs = []
     for ep_dir in sorted(root.glob("*/*")):
         if not ep_dir.is_dir():
