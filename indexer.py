@@ -8,33 +8,62 @@ import meilisearch
 import config
 
 
+def _parse_srt(srt_path: Path) -> list[dict]:
+    """Parse an SRT file into [{start, end, text}, ...] with float seconds."""
+    segments = []
+    if not srt_path.exists():
+        return segments
+    block, start, end = [], None, None
+    for line in srt_path.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if "-->" in line:
+            parts = line.split("-->")
+            start = _srt_to_sec(parts[0].strip())
+            end = _srt_to_sec(parts[1].strip())
+        elif line and not line.isdigit() and start is not None:
+            block.append(line)
+        elif not line and block:
+            segments.append({"start": start, "end": end, "text": " ".join(block)})
+            block, start, end = [], None, None
+    if block and start is not None:
+        segments.append({"start": start, "end": end, "text": " ".join(block)})
+    return segments
+
+
+def _srt_to_sec(ts: str) -> float:
+    """'00:01:23,456' -> 83.456"""
+    ts = ts.replace(",", ".")
+    parts = ts.split(":")
+    try:
+        h, m, s = int(parts[0]), int(parts[1]), float(parts[2])
+        return h * 3600 + m * 60 + s
+    except Exception:
+        return 0.0
+
+
 def _load_episode(ep_dir: Path) -> dict | None:
     """Build a Meilisearch document from one episode directory."""
-    # find the dated slug — the stem shared by all files
     txt_files = list(ep_dir.glob("*.txt"))
     if not txt_files:
         return None
     stem = txt_files[0].stem
 
     txt_path = ep_dir / f"{stem}.txt"
+    # podcast-transcriber writes metadata (podcast/title/date/summary) into <stem>.json
     json_path = ep_dir / f"{stem}.json"
-    meta_path = ep_dir / "metadata.json"
+    srt_path = ep_dir / f"{stem}.srt"
 
     text = txt_path.read_text(errors="replace").strip() if txt_path.exists() else ""
     if not text:
         return None
 
-    segments = []
-    if json_path.exists():
-        try:
-            segments = json.loads(json_path.read_text())
-        except Exception:
-            pass
+    # Segments from SRT (timestamp-accurate, even if currently one big block)
+    segments = _parse_srt(srt_path)
 
     meta = {}
-    if meta_path.exists():
+    if json_path.exists():
         try:
-            meta = json.loads(meta_path.read_text())
+            meta = json.loads(json_path.read_text())
         except Exception:
             pass
 
