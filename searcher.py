@@ -22,6 +22,11 @@ def search(query: str, limit: int = 20) -> list[dict]:
         # Find segments that contain the query terms
         matched_segments = _find_matching_segments(query, segments)
 
+        abs_url = hit.get("abs_url", "")
+        # Only pass through http(s) URLs — drop anything else
+        if abs_url and not abs_url.startswith(("http://", "https://")):
+            abs_url = ""
+
         hits.append({
             "id": hit.get("id"),
             "podcast": hit.get("podcast", ""),
@@ -29,8 +34,8 @@ def search(query: str, limit: int = 20) -> list[dict]:
             "date": hit.get("date", ""),
             "text_snippet": hit.get("_formatted", {}).get("text", hit.get("text", ""))[:300],
             "matched_segments": matched_segments,
-            "abs_url": hit.get("abs_url", ""),
-            "episode_dir": hit.get("episode_dir", ""),
+            "abs_url": abs_url,
+            # episode_dir intentionally excluded — internal path, not for UI
         })
 
     return hits

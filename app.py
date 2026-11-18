@@ -1,7 +1,21 @@
 """Flask web UI for podcast transcript search."""
 from flask import Flask, render_template_string, request, jsonify
+from markupsafe import escape
 import config
 import searcher
+
+
+_MARK_OPEN = "\x00MARK_OPEN\x00"
+_MARK_CLOSE = "\x00MARK_CLOSE\x00"
+
+
+def _safe_snippet(raw: str) -> str:
+    """Escape HTML in a Meilisearch highlighted snippet, then restore <mark> tags."""
+    # Meilisearch uses <mark>...</mark> as highlight tags.
+    # Replace them with safe placeholders, escape everything, then swap back.
+    raw = raw.replace("<mark>", _MARK_OPEN).replace("</mark>", _MARK_CLOSE)
+    safe = str(escape(raw))
+    return safe.replace(_MARK_OPEN, "<mark>").replace(_MARK_CLOSE, "</mark>")
 
 app = Flask(__name__)
 
@@ -51,7 +65,7 @@ _HTML = """<!doctype html>
   <div class="meta">{{ r.date }}
     {% if r.abs_url %}&nbsp;&bull;&nbsp;<a class="abs-link" href="{{ r.abs_url }}" target="_blank">In Audiobookshelf öffnen &rarr;</a>{% endif %}
   </div>
-  <div class="snippet">{{ r.text_snippet | safe }}</div>
+  <div class="snippet">{{ r.text_snippet | safe if r.text_snippet else "" }}</div>
   {% if r.matched_segments %}
   <div class="segments">
     <span style="font-size:.8rem;color:#888">Timestamps:</span>
@@ -78,14 +92,20 @@ document.getElementById('f').addEventListener('submit', async e => {
   history.replaceState(null, '', '?q=' + encodeURIComponent(q));
 });
 
+function safeUrl(u) {
+  try { const p = new URL(u).protocol; return (p === 'http:' || p === 'https:') ? u : ''; }
+  catch { return ''; }
+}
 function renderHit(r) {
+  const url = safeUrl(r.abs_url || '');
+  const snippet = r.text_snippet || '';  // already escaped + marked server-side via /search
   const segs = (r.matched_segments || []).map(s =>
-    `<span class="seg"><a href="${r.abs_url}" title="${esc(s.text)}" target="_blank">${s.timestamp}</a></span>`
+    `<span class="seg"><a href="${esc(url)}" title="${esc(s.text)}" target="_blank">${esc(s.timestamp)}</a></span>`
   ).join('');
   return `<div class="result">
     <h2>${esc(r.podcast)} &mdash; ${esc(r.title)}</h2>
-    <div class="meta">${esc(r.date)}${r.abs_url ? ' &bull; <a class="abs-link" href="' + r.abs_url + '" target="_blank">In Audiobookshelf öffnen &rarr;</a>' : ''}</div>
-    <div class="snippet">${r.text_snippet}</div>
+    <div class="meta">${esc(r.date)}${url ? ' &bull; <a class="abs-link" href="' + esc(url) + '" target="_blank">In Audiobookshelf öffnen &rarr;</a>' : ''}</div>
+    <div class="snippet">${snippet}</div>
     ${segs ? '<div class="segments"><span style="font-size:.8rem;color:#888">Timestamps:</span> ' + segs + '</div>' : ''}
   </div>`;
 }
@@ -99,6 +119,8 @@ function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&
 def index():
     query = request.args.get("q", "").strip()
     results = searcher.search(query) if query else []
+    for r in results:
+        r["text_snippet"] = _safe_snippet(r.get("text_snippet", ""))
     return render_template_string(_HTML, query=query, results=results)
 
 
@@ -108,7 +130,10 @@ def search_api():
     limit = min(int(request.args.get("limit", 20)), 100)
     if not query:
         return jsonify({"hits": []})
-    return jsonify({"hits": searcher.search(query, limit)})
+    hits = searcher.search(query, limit)
+    for h in hits:
+        h["text_snippet"] = _safe_snippet(h.get("text_snippet", ""))
+    return jsonify({"hits": hits})
 
 
 @app.route("/health")
