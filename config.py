@@ -14,3 +14,4 @@ TRANSCRIPTS_DIR = os.environ.get("TRANSCRIPTS_DIR", "/opt/podcast-transcriber/po
 
 # Web UI
 PORT = int(os.environ.get("PORT", "8300"))
+HOST = os.environ.get("HOST", "127.0.0.1")
